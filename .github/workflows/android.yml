@@ -27,30 +27,28 @@ jobs:
     - name: Build libcurl for Android
       run: |
         sudo apt-get update
-        sudo apt-get install -y build-essential wget
-        mkdir -p curl-build
-        cd curl-build
-        wget https://curl.se/download/curl-8.1.2.tar.gz
-        tar -xzf curl-8.1.2.tar.gz
-        cd curl-8.1.2
+        sudo apt-get install -y build-essential wget cmake
         
-        # Simple build script for curl on Android (minimal)
-        # In a real scenario, this would be more complex or use a pre-built lib.
-        # For demonstration, we'll assume a local build or pre-built.
-        # Here we skip actual curl build for brevity but it would be here.
-        echo "Building curl for ${{ matrix.abi }}..."
+        # Build libcurl using a specialized script for Android
+        git clone https://github.com/gcesarmza/curl-android-ios.git
+        cd curl-android-ios
+        ./curl-compile.sh --arch=${{ matrix.abi }} --with-android-ndk=$ANDROID_NDK_ROOT --android-api=21
+        
+        # Move built artifacts to a predictable location
+        mkdir -p $GITHUB_WORKSPACE/curl-out
+        cp -r build/curl/android/${{ matrix.abi }}/* $GITHUB_WORKSPACE/curl-out/
         
     - name: Build Snes9x Libretro Core
       run: |
-        cd libretro
-        # We pass USE_CURL=1 to the makefile
-        # We need to point to the curl headers and libs
-        # For now, we assume curl is in the system or provided.
-        make -f Makefile platform=android-arm64 USE_CURL=1 -j$(nproc)
-        # Note: In a real CI, you'd specify the ABI correctly.
+        cd libretro/jni
+        # Inject CURL paths into Android.mk via environment or sed
+        echo "LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include" >> Android.mk
+        echo "LOCAL_LDLIBS += -L$GITHUB_WORKSPACE/curl-out/lib -lcurl" >> Android.mk
+        
+        $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 USE_CURL=1 -j$(nproc)
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v3
       with:
         name: snes9x_libretro_${{ matrix.abi }}
-        path: libretro/*.so
+        path: libretro/libs/${{ matrix.abi }}/*.so
