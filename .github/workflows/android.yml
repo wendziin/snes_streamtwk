@@ -27,15 +27,40 @@ jobs:
     - name: Get prebuilt libcurl
       run: |
         git clone --depth 1 https://github.com/gustavogenovese/curl-android-ios.git curl_prebuilt
-        mkdir -p $GITHUB_WORKSPACE/curl-out/include/curl
+        mkdir -p $GITHUB_WORKSPACE/curl-out/include
         mkdir -p $GITHUB_WORKSPACE/curl-out/lib
-        cp -r curl_prebuilt/prebuilt-with-ssl/android/include/curl/*.h $GITHUB_WORKSPACE/curl-out/include/curl/
-        cp curl_prebuilt/prebuilt-with-ssl/android/${{ matrix.abi }}/*.a $GITHUB_WORKSPACE/curl-out/lib/
+        
+        # Discover and copy headers
+        find curl_prebuilt -name "curl" -type d -exec cp -r {} $GITHUB_WORKSPACE/curl-out/include/ \;
+        
+        # Discover and copy libraries for the specific ABI
+        # We search for .a files in the ABI folder
+        find curl_prebuilt/prebuilt-with-ssl/android/${{ matrix.abi }} -name "*.a" -exec cp {} $GITHUB_WORKSPACE/curl-out/lib/ \;
+        
+        # Debug: list what we got
+        echo "CURL OUT STRUCTURE:"
+        find $GITHUB_WORKSPACE/curl-out -maxdepth 3
         
     - name: Build Snes9x Libretro Core
       run: |
         cd libretro/jni
         
+        # Identify available libraries
+        CURL_LIB=$(find $GITHUB_WORKSPACE/curl-out/lib -name "libcurl.a")
+        SSL_LIB=$(find $GITHUB_WORKSPACE/curl-out/lib -name "libssl.a")
+        CRYPTO_LIB=$(find $GITHUB_WORKSPACE/curl-out/lib -name "libcrypto.a")
+        
+        if [ -z "$SSL_LIB" ] || [ -z "$CRYPTO_LIB" ]; then
+            echo "SSL or Crypto libs not found in default locations, searching deeper..."
+            SSL_LIB=$(find curl_prebuilt -name "libssl.a" | grep "${{ matrix.abi }}" | head -n 1)
+            CRYPTO_LIB=$(find curl_prebuilt -name "libcrypto.a" | grep "${{ matrix.abi }}" | head -n 1)
+        fi
+
+        echo "Using libs:"
+        echo "CURL: $CURL_LIB"
+        echo "SSL: $SSL_LIB"
+        echo "CRYPTO: $CRYPTO_LIB"
+
         # Create a completely new Android.mk to avoid sed mess
         cat <<EOF > Android.mk
         LOCAL_PATH := \$(call my-dir)
@@ -44,17 +69,17 @@ jobs:
         # Prebuilt modules
         include \$(CLEAR_VARS)
         LOCAL_MODULE := curl_static
-        LOCAL_SRC_FILES := $GITHUB_WORKSPACE/curl-out/lib/libcurl.a
+        LOCAL_SRC_FILES := $CURL_LIB
         include \$(PREBUILT_STATIC_LIBRARY)
 
         include \$(CLEAR_VARS)
         LOCAL_MODULE := ssl_static
-        LOCAL_SRC_FILES := $GITHUB_WORKSPACE/curl-out/lib/libssl.a
+        LOCAL_SRC_FILES := $SSL_LIB
         include \$(PREBUILT_STATIC_LIBRARY)
 
         include \$(CLEAR_VARS)
         LOCAL_MODULE := crypto_static
-        LOCAL_SRC_FILES := $GITHUB_WORKSPACE/curl-out/lib/libcrypto.a
+        LOCAL_SRC_FILES := $CRYPTO_LIB
         include \$(PREBUILT_STATIC_LIBRARY)
 
         # Main core
@@ -84,9 +109,6 @@ jobs:
         
         include \$(BUILD_SHARED_LIBRARY)
         EOF
-        
-        # Debug: show new Android.mk
-        cat Android.mk
         
         # Build
         $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 V=1 -j$(nproc)
