@@ -12,7 +12,8 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        abi: [armeabi-v7a, arm64-v8a, x86, x86_64]
+        # Only ARM architectures as requested
+        abi: [armeabi-v7a, arm64-v8a]
 
     steps:
     - uses: actions/checkout@v4
@@ -30,12 +31,18 @@ jobs:
         mkdir -p $GITHUB_WORKSPACE/curl-out/include
         mkdir -p $GITHUB_WORKSPACE/curl-out/lib
         
-        # Copy all headers
+        # Copy headers
         cp -r curl_prebuilt/prebuilt-with-ssl/android/include/* $GITHUB_WORKSPACE/curl-out/include/
         
-        # Copy all .a files for the specific ABI
-        # The path structure is curl_prebuilt/prebuilt-with-ssl/android/[abi]/*.a
-        cp curl_prebuilt/prebuilt-with-ssl/android/${{ matrix.abi }}/*.a $GITHUB_WORKSPACE/curl-out/lib/
+        # Find and copy libraries for the specific ABI
+        # Some repos put them in subfolders or use different names
+        echo "Searching for libs for ${{ matrix.abi }}..."
+        find curl_prebuilt -name "*.a" | grep "${{ matrix.abi }}" || true
+        
+        # Copy whatever .a files we find for this ABI
+        find curl_prebuilt -name "libcurl.a" | grep "${{ matrix.abi }}" | xargs -I {} cp {} $GITHUB_WORKSPACE/curl-out/lib/
+        find curl_prebuilt -name "libssl.a" | grep "${{ matrix.abi }}" | xargs -I {} cp {} $GITHUB_WORKSPACE/curl-out/lib/
+        find curl_prebuilt -name "libcrypto.a" | grep "${{ matrix.abi }}" | xargs -I {} cp {} $GITHUB_WORKSPACE/curl-out/lib/
         
         # Debug: list what we got
         echo "CURL OUT LIB CONTENT:"
@@ -45,13 +52,17 @@ jobs:
       run: |
         cd libretro/jni
         
-        # Absolute paths for the libraries
-        LIB_DIR="$GITHUB_WORKSPACE/curl-out/lib"
-        CURL_PATH="$LIB_DIR/libcurl.a"
-        SSL_PATH="$LIB_DIR/libssl.a"
-        CRYPTO_PATH="$LIB_DIR/libcrypto.a"
+        # Identify available libraries in our output folder
+        CURL_PATH=$(find $GITHUB_WORKSPACE/curl-out/lib -name "libcurl.a")
+        SSL_PATH=$(find $GITHUB_WORKSPACE/curl-out/lib -name "libssl.a")
+        CRYPTO_PATH=$(find $GITHUB_WORKSPACE/curl-out/lib -name "libcrypto.a")
 
-        # Create a completely new Android.mk
+        echo "Using libs:"
+        echo "CURL: $CURL_PATH"
+        echo "SSL: $SSL_PATH"
+        echo "CRYPTO: $CRYPTO_PATH"
+
+        # Create Android.mk
         cat <<EOF > Android.mk
         LOCAL_PATH := \$(call my-dir)
         USE_CURL := 1
@@ -60,17 +71,27 @@ jobs:
         LOCAL_MODULE := curl_static
         LOCAL_SRC_FILES := $CURL_PATH
         include \$(PREBUILT_STATIC_LIBRARY)
+        EOF
 
+        if [ -n "$SSL_PATH" ]; then
+          cat <<EOF >> Android.mk
         include \$(CLEAR_VARS)
         LOCAL_MODULE := ssl_static
         LOCAL_SRC_FILES := $SSL_PATH
         include \$(PREBUILT_STATIC_LIBRARY)
+EOF
+        fi
 
+        if [ -n "$CRYPTO_PATH" ]; then
+          cat <<EOF >> Android.mk
         include \$(CLEAR_VARS)
         LOCAL_MODULE := crypto_static
         LOCAL_SRC_FILES := $CRYPTO_PATH
         include \$(PREBUILT_STATIC_LIBRARY)
+EOF
+        fi
 
+        cat <<EOF >> Android.mk
         CORE_DIR := \$(LOCAL_PATH)/../..
         include \$(CORE_DIR)/libretro/Makefile.common
 
@@ -79,7 +100,17 @@ jobs:
         LOCAL_SRC_FILES := \$(SOURCES_C) \$(SOURCES_CXX)
         
         LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include
-        LOCAL_STATIC_LIBRARIES += curl_static ssl_static crypto_static
+        LOCAL_STATIC_LIBRARIES += curl_static
+EOF
+
+        if [ -n "$SSL_PATH" ]; then
+          echo "LOCAL_STATIC_LIBRARIES += ssl_static" >> Android.mk
+        fi
+        if [ -n "$CRYPTO_PATH" ]; then
+          echo "LOCAL_STATIC_LIBRARIES += crypto_static" >> Android.mk
+        fi
+
+        cat <<EOF >> Android.mk
         LOCAL_LDLIBS += -lz
         LOCAL_CFLAGS += -DUSE_CURL
 
@@ -95,7 +126,7 @@ jobs:
         LOCAL_LDFLAGS   := -Wl,-version-script=\$(CORE_DIR)/libretro/link.T
         
         include \$(BUILD_SHARED_LIBRARY)
-        EOF
+EOF
         
         # Build
         $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 V=1 -j$(nproc)
