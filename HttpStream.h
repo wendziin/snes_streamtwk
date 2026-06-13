@@ -3,6 +3,7 @@
 
 #ifdef USE_CURL
 
+#include "snes9x.h"
 #include <string>
 #include <vector>
 #include <thread>

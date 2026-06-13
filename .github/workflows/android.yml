@@ -35,19 +35,25 @@ jobs:
     - name: Build Snes9x Libretro Core
       run: |
         cd libretro/jni
-        # Prepare injection file
-        cat <<EOF > curl_config.mk
-        USE_CURL := 1
+        
+        # 1. Define USE_CURL at the top of Android.mk so Makefile.common sees it
+        sed -i '1i USE_CURL := 1' Android.mk
+        
+        # 2. Add include paths and libraries after CLEAR_VARS
+        # We use a temporary file to construct the additions
+        cat <<EOF > curl_defs.mk
         LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include
-        LOCAL_LDFLAGS += $GITHUB_WORKSPACE/curl-out/lib/libcurl.a $GITHUB_WORKSPACE/curl-out/lib/libssl.a $GITHUB_WORKSPACE/curl-out/lib/libcrypto.a
-        LOCAL_LDLIBS += -lz
+        LOCAL_LDLIBS += $GITHUB_WORKSPACE/curl-out/lib/libcurl.a $GITHUB_WORKSPACE/curl-out/lib/libssl.a $GITHUB_WORKSPACE/curl-out/lib/libcrypto.a -lz
+        LOCAL_CFLAGS += -DUSE_CURL
         EOF
         
-        # Inject into Android.mk
-        sed -i '/include $(CLEAR_VARS)/i include $(LOCAL_PATH)/curl_config.mk' Android.mk
+        sed -i '/include $(CLEAR_VARS)/r curl_defs.mk' Android.mk
+        
+        # Debug: show modified Android.mk
+        cat Android.mk
         
         # Build
-        $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 USE_CURL=1 -j$(nproc)
+        $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 -j$(nproc)
         
     - name: Upload Artifact
       uses: actions/upload-artifact@v3
