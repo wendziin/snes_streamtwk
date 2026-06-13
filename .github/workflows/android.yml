@@ -27,17 +27,14 @@ jobs:
     - name: Get prebuilt libcurl
       run: |
         git clone --depth 1 https://github.com/gustavogenovese/curl-android-ios.git curl_prebuilt
-        mkdir -p $GITHUB_WORKSPACE/curl-out/include
+        mkdir -p $GITHUB_WORKSPACE/curl-out/include/curl
         mkdir -p $GITHUB_WORKSPACE/curl-out/lib
         
-        # Copy headers
         cp -r curl_prebuilt/prebuilt-with-ssl/android/include/* $GITHUB_WORKSPACE/curl-out/include/
         
-        # Find and copy libs for ABI
         echo "Searching for libs for ${{ matrix.abi }}..."
         LIBS_FOUND=$(find curl_prebuilt/prebuilt-with-ssl/android -name "*.a" | grep "/${{ matrix.abi }}/")
         if [ -z "$LIBS_FOUND" ]; then
-            echo "Searching globally for ${{ matrix.abi }}..."
             LIBS_FOUND=$(find curl_prebuilt -name "*.a" | grep "/${{ matrix.abi }}/")
         fi
         
@@ -45,7 +42,6 @@ jobs:
             cp -v "$lib" $GITHUB_WORKSPACE/curl-out/lib/
         done
         
-        # Verify
         echo "CURL OUT LIB CONTENT:"
         ls -R $GITHUB_WORKSPACE/curl-out/lib
         
@@ -63,64 +59,67 @@ jobs:
         ls -l "$SSL_LIB" || echo "SSL MISSING"
         ls -l "$CRYPTO_LIB" || echo "CRYPTO MISSING"
 
-        # Create a new Android.mk with absolute stability
+        # Create a new Android.mk with correct indentation for YAML
         cat <<EOF > Android.mk
-LOCAL_PATH := \$(call my-dir)
-USE_CURL := 1
+        LOCAL_PATH := \$(call my-dir)
+        USE_CURL := 1
 
-include \$(CLEAR_VARS)
-LOCAL_MODULE := curl_static
-LOCAL_SRC_FILES := $CURL_LIB
-include \$(PREBUILT_STATIC_LIBRARY)
-EOF
+        include \$(CLEAR_VARS)
+        LOCAL_MODULE := curl_static
+        LOCAL_SRC_FILES := $CURL_LIB
+        include \$(PREBUILT_STATIC_LIBRARY)
+        EOF
 
         if [ -f "$SSL_LIB" ]; then
             cat <<EOF >> Android.mk
-include \$(CLEAR_VARS)
-LOCAL_MODULE := ssl_static
-LOCAL_SRC_FILES := $SSL_LIB
-include \$(PREBUILT_STATIC_LIBRARY)
-EOF
+            include \$(CLEAR_VARS)
+            LOCAL_MODULE := ssl_static
+            LOCAL_SRC_FILES := $SSL_LIB
+            include \$(PREBUILT_STATIC_LIBRARY)
+            EOF
         fi
 
         if [ -f "$CRYPTO_LIB" ]; then
             cat <<EOF >> Android.mk
-include \$(CLEAR_VARS)
-LOCAL_MODULE := crypto_static
-LOCAL_SRC_FILES := $CRYPTO_LIB
-include \$(PREBUILT_STATIC_LIBRARY)
-EOF
+            include \$(CLEAR_VARS)
+            LOCAL_MODULE := crypto_static
+            LOCAL_SRC_FILES := $CRYPTO_LIB
+            include \$(PREBUILT_STATIC_LIBRARY)
+            EOF
         fi
 
         cat <<EOF >> Android.mk
-CORE_DIR := \$(LOCAL_PATH)/../..
-include \$(CORE_DIR)/libretro/Makefile.common
+        CORE_DIR := \$(LOCAL_PATH)/../..
+        include \$(CORE_DIR)/libretro/Makefile.common
 
-include \$(CLEAR_VARS)
-LOCAL_MODULE    := retro
-LOCAL_SRC_FILES := \$(SOURCES_C) \$(SOURCES_CXX)
-LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include
-LOCAL_STATIC_LIBRARIES += curl_static
-EOF
+        include \$(CLEAR_VARS)
+        LOCAL_MODULE    := retro
+        LOCAL_SRC_FILES := \$(SOURCES_C) \$(SOURCES_CXX)
+        LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include
+        LOCAL_STATIC_LIBRARIES += curl_static
+        EOF
 
         if [ -f "$SSL_LIB" ]; then echo "LOCAL_STATIC_LIBRARIES += ssl_static" >> Android.mk; fi
         if [ -f "$CRYPTO_LIB" ]; then echo "LOCAL_STATIC_LIBRARIES += crypto_static" >> Android.mk; fi
 
         cat <<EOF >> Android.mk
-LOCAL_LDLIBS += -lz -llog -ldl
-LOCAL_CFLAGS += -DUSE_CURL
+        LOCAL_LDLIBS += -lz -llog -ldl
+        LOCAL_CFLAGS += -DUSE_CURL
 
-COREFLAGS := -DANDROID -D__LIBRETRO__ -DHAVE_STRINGS_H -DRIGHTSHIFT_IS_SAR \$(INCFLAGS)
-GIT_VERSION := " \$(shell git rev-parse --short HEAD || echo unknown)"
-ifneq (\$(GIT_VERSION)," unknown")
-  COREFLAGS += -DGIT_VERSION=\\"\$(GIT_VERSION)\\"
-endif
+        COREFLAGS := -DANDROID -D__LIBRETRO__ -DHAVE_STRINGS_H -DRIGHTSHIFT_IS_SAR \$(INCFLAGS)
+        GIT_VERSION := " \$(shell git rev-parse --short HEAD || echo unknown)"
+        ifneq (\$(GIT_VERSION)," unknown")
+          COREFLAGS += -DGIT_VERSION=\\"\$(GIT_VERSION)\\"
+        endif
 
-LOCAL_CXXFLAGS  := \$(COREFLAGS)
-LOCAL_CFLAGS    += \$(COREFLAGS)
-LOCAL_LDFLAGS   := -Wl,-version-script=\$(CORE_DIR)/libretro/link.T
-include \$(BUILD_SHARED_LIBRARY)
-EOF
+        LOCAL_CXXFLAGS  := \$(COREFLAGS)
+        LOCAL_CFLAGS    += \$(COREFLAGS)
+        LOCAL_LDFLAGS   := -Wl,-version-script=\$(CORE_DIR)/libretro/link.T
+        include \$(BUILD_SHARED_LIBRARY)
+        EOF
+        
+        # Clean up leading spaces from Android.mk (from indentation)
+        sed -i 's/^[[:space:]]*//' Android.mk
         
         cat Android.mk
         
