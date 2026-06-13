@@ -2,6 +2,7 @@
 #include <QMenu>
 #include <QMenuBar>
 #include <QFileDialog>
+#include <QInputDialog>
 #include <QtEvents>
 #include <QGuiApplication>
 
@@ -170,6 +171,18 @@ void EmuMainWindow::createWidgets()
     connect(open_item, &QAction::triggered, this, [&] {
         openFile();
     });
+
+    auto open_remote_item = file_menu->addAction(QIcon(iconset + "open.svg"), tr("Open &Remote ROM..."));
+    connect(open_remote_item, &QAction::triggered, this, [&] {
+        bool ok;
+        QString url = QInputDialog::getText(this, tr("Open Remote ROM"),
+                                            tr("URL:"), QLineEdit::Normal,
+                                            "http://", &ok);
+        if (ok && !url.isEmpty()) {
+            openFile(url.toStdString());
+        }
+    });
+
     // File->Recent Files submenu
     recent_menu = new QMenu("Recent Files");
     file_menu->addMenu(recent_menu);

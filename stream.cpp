@@ -16,6 +16,9 @@
 #  endif
 #endif
 #include "stream.h"
+#ifdef USE_CURL
+#include "HttpStream.h"
+#endif
 
 
 // Generic constructor/destructor
@@ -456,6 +459,11 @@ void nulStream::closeStream()
 
 Stream *openStreamFromFSTREAM(const char* filename, const char* mode)
 {
+#ifdef USE_CURL
+    if (strncmp(filename, "http://", 7) == 0 || strncmp(filename, "https://", 8) == 0)
+        return new HttpStream(filename);
+#endif
+
     FSTREAM f = OPEN_FSTREAM(filename,mode);
     if(!f)
         return NULL;

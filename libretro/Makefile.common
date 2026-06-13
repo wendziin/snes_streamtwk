@@ -41,6 +41,12 @@ SOURCES_CXX := $(CORE_DIR)/apu/apu.cpp \
 				 $(CORE_DIR)/ppu.cpp \
 				 $(CORE_DIR)/stream.cpp \
 				 $(CORE_DIR)/sa1.cpp \
+
+ifeq ($(USE_CURL), 1)
+	SOURCES_CXX += $(CORE_DIR)/HttpStream.cpp
+	COREFLAGS += -DUSE_CURL
+	LIBS += -lcurl
+endif
 				 $(CORE_DIR)/sa1cpu.cpp \
 				 $(CORE_DIR)/screenshot.cpp\
 				 $(CORE_DIR)/sdd1.cpp \
