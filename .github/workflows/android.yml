@@ -24,27 +24,29 @@ jobs:
       with:
         ndk-version: r25c
 
-    - name: Build libcurl for Android
+    - name: Get prebuilt libcurl
       run: |
-        sudo apt-get update
-        sudo apt-get install -y build-essential wget cmake
-        
-        # Build libcurl using a specialized script for Android
-        git clone https://github.com/gcesarmza/curl-android-ios.git
-        cd curl-android-ios
-        ./curl-compile.sh --arch=${{ matrix.abi }} --with-android-ndk=$ANDROID_NDK_ROOT --android-api=21
-        
-        # Move built artifacts to a predictable location
-        mkdir -p $GITHUB_WORKSPACE/curl-out
-        cp -r build/curl/android/${{ matrix.abi }}/* $GITHUB_WORKSPACE/curl-out/
+        git clone --depth 1 https://github.com/gustavogenovese/curl-android-ios.git curl_prebuilt
+        mkdir -p $GITHUB_WORKSPACE/curl-out/include
+        mkdir -p $GITHUB_WORKSPACE/curl-out/lib
+        cp -r curl_prebuilt/prebuilt-with-ssl/android/include/* $GITHUB_WORKSPACE/curl-out/include/
+        cp curl_prebuilt/prebuilt-with-ssl/android/${{ matrix.abi }}/*.a $GITHUB_WORKSPACE/curl-out/lib/
         
     - name: Build Snes9x Libretro Core
       run: |
         cd libretro/jni
-        # Inject CURL paths into Android.mk via environment or sed
-        echo "LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include" >> Android.mk
-        echo "LOCAL_LDLIBS += -L$GITHUB_WORKSPACE/curl-out/lib -lcurl" >> Android.mk
+        # Prepare injection file
+        cat <<EOF > curl_config.mk
+        USE_CURL := 1
+        LOCAL_C_INCLUDES += $GITHUB_WORKSPACE/curl-out/include
+        LOCAL_LDFLAGS += $GITHUB_WORKSPACE/curl-out/lib/libcurl.a $GITHUB_WORKSPACE/curl-out/lib/libssl.a $GITHUB_WORKSPACE/curl-out/lib/libcrypto.a
+        LOCAL_LDLIBS += -lz
+        EOF
         
+        # Inject into Android.mk
+        sed -i '/include $(CLEAR_VARS)/i include $(LOCAL_PATH)/curl_config.mk' Android.mk
+        
+        # Build
         $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 USE_CURL=1 -j$(nproc)
         
     - name: Upload Artifact
