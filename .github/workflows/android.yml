@@ -15,7 +15,7 @@ jobs:
         abi: [armeabi-v7a, arm64-v8a, x86, x86_64]
 
     steps:
-    - uses: actions/checkout@v3
+    - uses: actions/checkout@v4
       with:
         submodules: recursive
 
@@ -29,7 +29,6 @@ jobs:
         git clone --depth 1 https://github.com/gustavogenovese/curl-android-ios.git curl_prebuilt
         mkdir -p $GITHUB_WORKSPACE/curl-out/include/curl
         mkdir -p $GITHUB_WORKSPACE/curl-out/lib
-        # Copy headers - ensuring they are in curl/ subdirectory
         cp -r curl_prebuilt/prebuilt-with-ssl/android/include/curl/*.h $GITHUB_WORKSPACE/curl-out/include/curl/
         cp curl_prebuilt/prebuilt-with-ssl/android/${{ matrix.abi }}/*.a $GITHUB_WORKSPACE/curl-out/lib/
         
@@ -71,11 +70,11 @@ jobs:
         
         sed -i '/include $(CLEAR_VARS)/r curl_defs.mk' Android.mk
         
-        # Build with verbose output
+        # Build
         $ANDROID_NDK_ROOT/ndk-build APP_ABI=${{ matrix.abi }} APP_PLATFORM=android-21 V=1 -j$(nproc)
         
     - name: Upload Artifact
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       with:
         name: snes9x_libretro_${{ matrix.abi }}
         path: libretro/libs/${{ matrix.abi }}/*.so
