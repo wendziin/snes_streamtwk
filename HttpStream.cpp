@@ -4,6 +4,7 @@
 
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <algorithm>
 
 HttpStream::HttpStream(const char *u) : url(u), file_size(0), current_pos(0), cache_buffer(NULL), stop_thread(false)
